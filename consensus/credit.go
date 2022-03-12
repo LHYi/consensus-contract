@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	ledgerapi "github.com/LHYi/rc-contract-go/ledger-api"
+	ledgerapi "github.com/LHYi/consensus-contract/ledger-api"
 )
 
 // State enum for response credit state property

@@ -1,4 +1,4 @@
-module ledger-api
+module github.com/LHYi/consensus-contract/ledger-api
 
 go 1.17
 
