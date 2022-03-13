@@ -1,11 +1,8 @@
-module github.com/LHYi/consensus-contract/consensus
+module github.com/LHYi/consensus-contract/chaincode
 
 go 1.17
 
-require (
-	github.com/LHYi/consensus-contract/ledger-api v0.0.0-20220312022311-398a06081999
-	github.com/hyperledger/fabric-contract-api-go v1.1.1
-)
+require github.com/hyperledger/fabric-contract-api-go v1.1.1
 
 require (
 	github.com/PuerkitoBio/purell v1.1.1 // indirect
