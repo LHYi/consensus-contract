@@ -28,12 +28,6 @@ func (c *Contract) Issue(ctx TransactionContextInterface, creditNumber string, i
 	credit := ResponseCredit{CreditNumber: creditNumber, Issuer: issuer, IssuerMSP: clientIdentity, IssueDateTime: issueDateTime, Owner: issuer, OwnerMSP: clientIdentity}
 	credit.SetIssued()
 
-	err := ctx.GetCreditList().AddCredit(&credit)
-
-	if err != nil {
-		return nil, err
-	}
-
 	payload := "A new asset is issued."
 	payloadAsBytes := []byte(payload)
 
@@ -41,6 +35,12 @@ func (c *Contract) Issue(ctx TransactionContextInterface, creditNumber string, i
 
 	if eventErr != nil {
 		panic(eventErr)
+	}
+
+	err := ctx.GetCreditList().AddCredit(&credit)
+
+	if err != nil {
+		return nil, err
 	}
 
 	return &credit, nil
