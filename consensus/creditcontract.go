@@ -1,182 +1,194 @@
-package consensus
+package chaincode
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/hyperledger/fabric-contract-api-go/contractapi"
 )
 
-// Contract chaincode that defines
-// the business logic for managing response credit
-
-type Contract struct {
+// SmartContract provides functions for managing an Asset
+type SmartContract struct {
 	contractapi.Contract
 }
 
-// Instantiate does nothing
-func (c *Contract) Instantiate() {
-	fmt.Println("Instantiated")
+// Asset describes basic details of what makes up a simple asset
+//Insert struct field in alphabetic order => to achieve determinism accross languages
+// golang keeps the order when marshal to json but doesn't order automatically
+type Asset struct {
+	AppraisedValue int    `json:"AppraisedValue"`
+	Color          string `json:"Color"`
+	ID             string `json:"ID"`
+	Owner          string `json:"Owner"`
+	Size           int    `json:"Size"`
 }
 
-// Issue creates a new response credit and stores it in the world state
-func (c *Contract) Issue(ctx TransactionContextInterface, creditNumber string, issuer string, issueDateTime string) (*ResponseCredit, error) {
-	clientIdentity, err0 := ctx.GetClientIdentity().GetMSPID()
-	if err0 != nil {
-		return nil, fmt.Errorf("Failed to get client identity")
+// InitLedger adds a base set of assets to the ledger
+func (s *SmartContract) InitLedger(ctx contractapi.TransactionContextInterface) error {
+	assets := []Asset{
+		{ID: "asset1", Color: "blue", Size: 5, Owner: "Tomoko", AppraisedValue: 300},
+		{ID: "asset2", Color: "red", Size: 5, Owner: "Brad", AppraisedValue: 400},
+		{ID: "asset3", Color: "green", Size: 10, Owner: "Jin Soo", AppraisedValue: 500},
+		{ID: "asset4", Color: "yellow", Size: 10, Owner: "Max", AppraisedValue: 600},
+		{ID: "asset5", Color: "black", Size: 15, Owner: "Adriana", AppraisedValue: 700},
+		{ID: "asset6", Color: "white", Size: 15, Owner: "Michel", AppraisedValue: 800},
 	}
 
-	credit := ResponseCredit{CreditNumber: creditNumber, Issuer: issuer, IssuerMSP: clientIdentity, IssueDateTime: issueDateTime, Owner: issuer, OwnerMSP: clientIdentity}
-	credit.SetIssued()
+	for _, asset := range assets {
+		assetJSON, err := json.Marshal(asset)
+		if err != nil {
+			return err
+		}
 
-	payload := "A new asset is issued."
-	payloadAsBytes := []byte(payload)
-
-	eventErr := ctx.GetStub().SetEvent("IssueAsset", payloadAsBytes)
-
-	if eventErr != nil {
-		panic(eventErr)
+		err = ctx.GetStub().PutState(asset.ID, assetJSON)
+		if err != nil {
+			return fmt.Errorf("failed to put to world state. %v", err)
+		}
 	}
 
-	err := ctx.GetCreditList().AddCredit(&credit)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return &credit, nil
+	return nil
 }
 
-// Query returns the credit queried by the given issuer and credir number
-func (c *Contract) Query(ctx TransactionContextInterface, creditNumber string, issuer string) (*ResponseCredit, error) {
-	credit, err := ctx.GetCreditList().GetCredit(issuer, creditNumber)
-
+// CreateAsset issues a new asset to the world state with given details.
+func (s *SmartContract) CreateAsset(ctx contractapi.TransactionContextInterface, id string, color string, size int, owner string, appraisedValue int) error {
+	exists, err := s.AssetExists(ctx, id)
 	if err != nil {
-		return nil, err
+		return err
+	}
+	if exists {
+		return fmt.Errorf("the asset %s already exists", id)
 	}
 
-	return credit, nil
+	asset := Asset{
+		ID:             id,
+		Color:          color,
+		Size:           size,
+		Owner:          owner,
+		AppraisedValue: appraisedValue,
+	}
+	assetJSON, err := json.Marshal(asset)
+	if err != nil {
+		return err
+	}
+
+	return ctx.GetStub().PutState(id, assetJSON)
 }
 
-// Buy updates a response credit to be in trading status and sets the new owner
-func (c *Contract) Buy(ctx TransactionContextInterface, issuer string, creditNumber string, currentOwner string, currentOwnerMSP string, newOwner string, newOwnerMSP string, price int, purchaseDateTime string) (*ResponseCredit, error) {
-	credit, err := ctx.GetCreditList().GetCredit(issuer, creditNumber)
+// ReadAsset returns the asset stored in the world state with given id.
+func (s *SmartContract) ReadAsset(ctx contractapi.TransactionContextInterface, id string) (*Asset, error) {
+	assetJSON, err := ctx.GetStub().GetState(id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read from world state: %v", err)
+	}
+	if assetJSON == nil {
+		return nil, fmt.Errorf("the asset %s does not exist", id)
+	}
 
+	var asset Asset
+	err = json.Unmarshal(assetJSON, &asset)
 	if err != nil {
 		return nil, err
 	}
 
-	if credit.Owner != currentOwner {
-		return nil, fmt.Errorf("Credit %s:%s is not owned by %s", issuer, creditNumber, currentOwner)
-	}
-
-	if credit.IsIssued() {
-		credit.SetTrading()
-	}
-
-	if !credit.IsTrading() {
-		return nil, fmt.Errorf("Credit %s:%s is not trading. Current state = %s", issuer, creditNumber, credit.GetState())
-	}
-
-	credit.Owner = newOwner
-
-	err = ctx.GetCreditList().UpdateCredit(credit)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return credit, nil
+	return &asset, nil
 }
 
-// BuyRequest is invoked by the buyer, which checks the owner of the response credit and set it to the pending state
-func (c *Contract) BuyRequest(ctx TransactionContextInterface, issuer string, creditNumber string, currentOwner string, newOwner string, price int, purchaseDateTime string) (*ResponseCredit, error) {
-	credit, err := ctx.GetCreditList().GetCredit(issuer, creditNumber)
-
+// UpdateAsset updates an existing asset in the world state with provided parameters.
+func (s *SmartContract) UpdateAsset(ctx contractapi.TransactionContextInterface, id string, color string, size int, owner string, appraisedValue int) error {
+	exists, err := s.AssetExists(ctx, id)
 	if err != nil {
-		return nil, err
+		return err
+	}
+	if !exists {
+		return fmt.Errorf("the asset %s does not exist", id)
 	}
 
-	if credit.IsIssued() {
-		credit.SetTrading()
+	// overwriting original asset with new asset
+	asset := Asset{
+		ID:             id,
+		Color:          color,
+		Size:           size,
+		Owner:          owner,
+		AppraisedValue: appraisedValue,
 	}
-
-	if !credit.IsTrading() {
-		return nil, fmt.Errorf("Credit %s:%s is not trading. Current state = %s", issuer, creditNumber, credit.GetState())
-	}
-
-	credit.SetPending()
-
-	err = ctx.GetCreditList().UpdateCredit(credit)
-
+	assetJSON, err := json.Marshal(asset)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return credit, nil
+	return ctx.GetStub().PutState(id, assetJSON)
 }
 
-// Transfer function only allows the owner of the commercial paper to execute, which is the complement to the BuyRequest function.
-func (c *Contract) Transfer(ctx TransactionContextInterface, issuer string, creditNumber string, currentOwner string, newOwner string, newOwnerMSP string, confirmDateTime string) (*ResponseCredit, error) {
-	credit, err := ctx.GetCreditList().GetCredit(issuer, creditNumber)
-
-	clientIdentity, err := ctx.GetClientIdentity().GetMSPID()
+// DeleteAsset deletes an given asset from the world state.
+func (s *SmartContract) DeleteAsset(ctx contractapi.TransactionContextInterface, id string) error {
+	exists, err := s.AssetExists(ctx, id)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to get client identity")
+		return err
 	}
-	if credit.OwnerMSP != clientIdentity {
-		return nil, fmt.Errorf("Credit %s:%s is not owned by you, failed to transfer", issuer, creditNumber)
-	}
-
-	if !credit.IsPending() {
-		return nil, fmt.Errorf("Credit %s:%s is not pending. Current state = %s. Need to invoke BuyRequest first.", issuer, creditNumber, credit.GetState())
+	if !exists {
+		return fmt.Errorf("the asset %s does not exist", id)
 	}
 
-	credit.Owner = newOwner
-	credit.OwnerMSP = newOwnerMSP
-	credit.SetTrading()
-
-	err = ctx.GetCreditList().UpdateCredit(credit)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return credit, nil
+	return ctx.GetStub().DelState(id)
 }
 
-// Redeem updates a response credit status to be redeemed
-func (c *Contract) Redeem(ctx TransactionContextInterface, issuer string, creditNumber string, redeemingOwner string, redeenDateTime string) (*ResponseCredit, error) {
-	credit, err := ctx.GetCreditList().GetCredit(issuer, creditNumber)
+// AssetExists returns true when asset with given ID exists in world state
+func (s *SmartContract) AssetExists(ctx contractapi.TransactionContextInterface, id string) (bool, error) {
+	assetJSON, err := ctx.GetStub().GetState(id)
+	if err != nil {
+		return false, fmt.Errorf("failed to read from world state: %v", err)
+	}
 
+	return assetJSON != nil, nil
+}
+
+// TransferAsset updates the owner field of asset with given id in world state, and returns the old owner.
+func (s *SmartContract) TransferAsset(ctx contractapi.TransactionContextInterface, id string, newOwner string) (string, error) {
+	asset, err := s.ReadAsset(ctx, id)
+	if err != nil {
+		return "", err
+	}
+
+	oldOwner := asset.Owner
+	asset.Owner = newOwner
+
+	assetJSON, err := json.Marshal(asset)
+	if err != nil {
+		return "", err
+	}
+
+	err = ctx.GetStub().PutState(id, assetJSON)
+	if err != nil {
+		return "", err
+	}
+
+	return oldOwner, nil
+}
+
+// GetAllAssets returns all assets found in world state
+func (s *SmartContract) GetAllAssets(ctx contractapi.TransactionContextInterface) ([]*Asset, error) {
+	// range query with empty string for startKey and endKey does an
+	// open-ended query of all assets in the chaincode namespace.
+	resultsIterator, err := ctx.GetStub().GetStateByRange("", "")
 	if err != nil {
 		return nil, err
 	}
+	defer resultsIterator.Close()
 
-	if credit.IsRedeemed() {
-		return nil, fmt.Errorf("Credit %s:%s is already redeemed", issuer, creditNumber)
+	var assets []*Asset
+	for resultsIterator.HasNext() {
+		queryResponse, err := resultsIterator.Next()
+		if err != nil {
+			return nil, err
+		}
+
+		var asset Asset
+		err = json.Unmarshal(queryResponse.Value, &asset)
+		if err != nil {
+			return nil, err
+		}
+		assets = append(assets, &asset)
 	}
 
-	clientIdentity, err := ctx.GetClientIdentity().GetMSPID()
-	if err != nil {
-		return nil, fmt.Errorf("Failed to get client identity")
-	}
-	if credit.OwnerMSP != clientIdentity {
-		return nil, fmt.Errorf("Credit %s:%s is not owned by you, failed to invoke Redeem", issuer, creditNumber)
-	}
-
-	if credit.Owner != redeemingOwner {
-		return nil, fmt.Errorf("Credit %s:%s is not owned by %s", issuer, creditNumber, redeemingOwner)
-	}
-
-	credit.Owner = credit.Issuer
-	credit.OwnerMSP = credit.IssuerMSP
-	credit.SetRedeemed()
-
-	err = ctx.GetCreditList().UpdateCredit(credit)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return credit, nil
+	return assets, nil
 }
