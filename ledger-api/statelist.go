@@ -36,12 +36,12 @@ func (sl *StateList) AddState(state StateInterface) error {
 		return err
 	}
 
-	payload := "A new state is added to the world state database."
-	payloadAsBytes := []byte(payload)
-	eventErr := sl.Ctx.GetStub().SetEvent("Add State Event", payloadAsBytes)
-	if eventErr != nil {
-		return eventErr
-	}
+	// payload := "A new state is added to the world state database."
+	// payloadAsBytes := []byte(payload)
+	// eventErr := sl.Ctx.GetStub().SetEvent("Add State Event", payloadAsBytes)
+	// if eventErr != nil {
+	// 	return eventErr
+	// }
 
 	return sl.Ctx.GetStub().PutState(key, data)
 }
