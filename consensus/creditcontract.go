@@ -34,6 +34,15 @@ func (c *Contract) Issue(ctx TransactionContextInterface, creditNumber string, i
 		return nil, err
 	}
 
+	payload := "A new asset is issued."
+	payloadAsBytes := []byte(payload)
+
+	eventErr := ctx.GetStub().SetEvent("IssueAsset", payloadAsBytes)
+
+	if eventErr != nil {
+		panic(eventErr)
+	}
+
 	return &credit, nil
 }
 
